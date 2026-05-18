@@ -3,21 +3,22 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import {
   CUSTOMER_SOURCE_OPTIONS,
-  formatCustomerName,
-  normalizeBrazilianMobilePhone,
-  normalizeEmail,
   normalizeCustomerName,
+  normalizeCustomerPhone,
   normalizeCustomerSource,
 } from "@/lib/customers";
 
-const customerSchema = z.object({
+const customerUpdateSchema = z.object({
   full_name: z.string().min(2),
-  email: z.string().optional().nullable(),
+  email: z.string().email().optional().nullable(),
   phone: z.string().optional().nullable(),
   source: z.enum(CUSTOMER_SOURCE_OPTIONS).optional().nullable(),
 });
 
-async function resolveRestaurantId(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+async function resolveRestaurantId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string
+) {
   const { data, error } = await supabase
     .from("restaurant_users")
     .select("restaurant_id")
@@ -26,11 +27,10 @@ async function resolveRestaurantId(supabase: Awaited<ReturnType<typeof createCli
 
   const restaurantUser = data?.[0] ?? null;
 
-  console.log("[customers-api] restaurant_users lookup", {
+  console.log("[customers-id-api] restaurant_users lookup", {
     userId,
     restaurantId: restaurantUser?.restaurant_id ?? null,
     queryError: error?.message ?? null,
-    row: restaurantUser,
   });
 
   if (error || !restaurantUser?.restaurant_id) {
@@ -40,17 +40,22 @@ async function resolveRestaurantId(supabase: Awaited<ReturnType<typeof createCli
   return restaurantUser.restaurant_id as string;
 }
 
-export async function GET() {
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const supabase = await createClient();
+  const { id: customerId } = await params;
 
   const {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser();
 
-  console.log("[customers-api] auth getUser", {
+  console.log("[customers-id-api] auth getUser (PUT)", {
     user: user ? { id: user.id, email: user.email } : null,
     authError: authError?.message ?? null,
+    customerId,
   });
 
   if (authError || !user) {
@@ -66,47 +71,32 @@ export async function GET() {
     );
   }
 
-  const { data, error } = await supabase
+  // Verificar se o cliente pertence ao restaurante do usuário
+  const { data: existingCustomer, error: fetchError } = await supabase
     .from("customers")
-    .select("*")
+    .select("id, restaurant_id")
+    .eq("id", customerId)
     .eq("restaurant_id", restaurantId)
-    .order("created_at", { ascending: false });
+    .limit(1);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  const customerRow = existingCustomer?.[0] ?? null;
 
-  return NextResponse.json({ customers: data });
-}
-
-export async function POST(request: Request) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  console.log("[customers-api] auth getUser (POST)", {
-    user: user ? { id: user.id, email: user.email } : null,
-    authError: authError?.message ?? null,
+  console.log("[customers-id-api] fetch existing customer", {
+    customerId,
+    restaurantId,
+    exists: !!customerRow,
+    fetchError: fetchError?.message ?? null,
   });
 
-  if (authError || !user) {
-    return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
-  }
-
-  const restaurantId = await resolveRestaurantId(supabase, user.id);
-
-  if (!restaurantId) {
+  if (fetchError || !customerRow) {
     return NextResponse.json(
-      { error: "Restaurante não encontrado para o usuário." },
-      { status: 403 }
+      { error: "Cliente não encontrado ou sem permissão de acesso." },
+      { status: 404 }
     );
   }
 
   const body = await request.json();
-  const parsed = customerSchema.safeParse(body);
+  const parsed = customerUpdateSchema.safeParse(body);
 
   if (!parsed.success) {
     return NextResponse.json(
@@ -115,17 +105,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const formattedName = formatCustomerName(parsed.data.full_name);
-  const normalizedName = normalizeCustomerName(formattedName);
-  const normalizedPhone = normalizeBrazilianMobilePhone(parsed.data.phone);
-  const normalizedEmail = normalizeEmail(parsed.data.email);
-
-  if (!normalizedPhone) {
-    return NextResponse.json(
-      { error: "Telefone inválido. Informe um celular brasileiro com DDD." },
-      { status: 400 }
-    );
-  }
+  const normalizedName = normalizeCustomerName(parsed.data.full_name);
+  const normalizedPhone = normalizeCustomerPhone(parsed.data.phone);
 
   if (normalizedName && normalizedPhone) {
     const { data: duplicateCustomers, error: duplicateError } = await supabase
@@ -134,6 +115,7 @@ export async function POST(request: Request) {
       .eq("restaurant_id", restaurantId)
       .eq("normalized_name", normalizedName)
       .eq("normalized_phone", normalizedPhone)
+      .neq("id", customerId)
       .limit(1);
 
     const duplicateCustomer = duplicateCustomers?.[0] ?? null;
@@ -147,19 +129,20 @@ export async function POST(request: Request) {
     }
   }
 
-  const record = {
-    restaurant_id: restaurantId,
-    full_name: formattedName,
-    email: normalizedEmail,
-    phone: normalizedPhone,
-    source: normalizeCustomerSource(parsed.data.source) ?? "Manual",
+  const updateRecord = {
+    full_name: parsed.data.full_name.trim(),
+    email: parsed.data.email?.trim() || null,
+    phone: parsed.data.phone?.trim() || null,
+    source: normalizeCustomerSource(parsed.data.source),
     normalized_name: normalizedName,
     normalized_phone: normalizedPhone,
   };
 
   const { data, error } = await supabase
     .from("customers")
-    .insert(record)
+    .update(updateRecord)
+    .eq("id", customerId)
+    .eq("restaurant_id", restaurantId)
     .select()
     .limit(1);
 
@@ -167,10 +150,10 @@ export async function POST(request: Request) {
 
   if (error || !customer) {
     return NextResponse.json(
-      { error: error?.message ?? "Erro ao criar cliente." },
+      { error: error?.message ?? "Erro ao atualizar cliente." },
       { status: 500 }
     );
   }
 
-  return NextResponse.json({ customer }, { status: 201 });
+  return NextResponse.json({ customer }, { status: 200 });
 }
