@@ -47,7 +47,6 @@ function isAllowedEvent(type: string | undefined) {
 }
 
 export async function POST(request: Request) {
-  const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
   const configuredSecret = process.env.RESEND_WEBHOOK_TOKEN;
 
   if (configuredSecret) {
@@ -112,7 +111,6 @@ export async function POST(request: Request) {
   };
 
   if (eventType === "email.delivered") {
-    updates.status = "delivered";
     updates.delivered_at = eventCreatedAt;
   }
 
