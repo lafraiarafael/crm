@@ -1,5 +1,29 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { sendCampaignEmail } from "@/lib/resend";
+
+type Customer = {
+  id: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  source?: string | null;
+};
+
+type Campaign = {
+  id: string;
+  restaurant_id: string;
+  name: string;
+  channel: "email" | "whatsapp";
+  status: "draft" | "scheduled" | "sent" | "failed" | "paused";
+  subject: string | null;
+  message: string;
+  created_at: string;
+  sent_at: string | null;
+  total_recipients: number;
+  total_sent: number;
+  total_failed: number;
+};
 
 async function resolveRestaurantId(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -18,6 +42,83 @@ async function resolveRestaurantId(
   }
 
   return restaurantUser.restaurant_id as string;
+}
+
+function personalizeMessage(message: string, customer: Customer | null) {
+  const firstName = customer?.full_name?.trim().split(/\s+/)[0] ?? "";
+  return message
+    .replaceAll("{nome}", firstName || "cliente")
+    .replaceAll("{nome_completo}", customer?.full_name ?? "cliente");
+}
+
+function textToHtml(text: string) {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .map((line) => (line ? `<p>${line}</p>` : "<br />"))
+    .join("\n");
+}
+
+async function loadCampaignContext(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  campaignId: string,
+  restaurantId: string
+) {
+  const { data: campaigns, error: campaignError } = await supabase
+    .from("campaigns")
+    .select(
+      "id, restaurant_id, name, channel, status, subject, message, created_at, sent_at, total_recipients, total_sent, total_failed"
+    )
+    .eq("id", campaignId)
+    .eq("restaurant_id", restaurantId)
+    .limit(1);
+
+  const campaign = (campaigns?.[0] ?? null) as Campaign | null;
+
+  if (campaignError || !campaign) {
+    return { campaign: null, recipients: [], error: campaignError?.message ?? "Campanha não encontrada." };
+  }
+
+  const { data: campaignCustomers, error: recipientsError } = await supabase
+    .from("campaign_customers")
+    .select("id, customer_id, created_at")
+    .eq("campaign_id", campaignId)
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: true });
+
+  if (recipientsError) {
+    return { campaign, recipients: [], error: recipientsError.message };
+  }
+
+  const customerIds = (campaignCustomers ?? [])
+    .map((row) => row.customer_id as string | null)
+    .filter((id): id is string => Boolean(id));
+
+  const customersById = new Map<string, Customer>();
+
+  if (customerIds.length > 0) {
+    const { data: customers, error: customersError } = await supabase
+      .from("customers")
+      .select("id, full_name, email, phone, source")
+      .eq("restaurant_id", restaurantId)
+      .in("id", customerIds);
+
+    if (customersError) {
+      return { campaign, recipients: [], error: customersError.message };
+    }
+
+    for (const customer of (customers ?? []) as Customer[]) {
+      customersById.set(customer.id, customer);
+    }
+  }
+
+  const recipients = (campaignCustomers ?? []).map((row) => ({
+    id: row.id as string,
+    customer_id: row.customer_id as string,
+    customer: customersById.get(row.customer_id as string) ?? null,
+  }));
+
+  return { campaign, recipients, error: null };
 }
 
 export async function GET(
@@ -45,60 +146,11 @@ export async function GET(
     );
   }
 
-  const { data: campaigns, error: campaignError } = await supabase
-    .from("campaigns")
-    .select(
-      "id, restaurant_id, name, channel, status, subject, message, created_at, sent_at, total_recipients, total_sent, total_failed"
-    )
-    .eq("id", campaignId)
-    .eq("restaurant_id", restaurantId)
-    .limit(1);
+  const { campaign, recipients, error } = await loadCampaignContext(supabase, campaignId, restaurantId);
 
-  const campaign = campaigns?.[0] ?? null;
-
-  if (campaignError || !campaign) {
-    return NextResponse.json(
-      { error: campaignError?.message ?? "Campanha não encontrada." },
-      { status: 404 }
-    );
+  if (error || !campaign) {
+    return NextResponse.json({ error: error ?? "Campanha não encontrada." }, { status: 404 });
   }
-
-  const { data: campaignCustomers, error: recipientsError } = await supabase
-    .from("campaign_customers")
-    .select("id, customer_id, created_at")
-    .eq("campaign_id", campaignId)
-    .eq("restaurant_id", restaurantId)
-    .order("created_at", { ascending: true });
-
-  if (recipientsError) {
-    return NextResponse.json({ error: recipientsError.message }, { status: 500 });
-  }
-
-  const customerIds = (campaignCustomers ?? [])
-    .map((row) => row.customer_id as string | null)
-    .filter((id): id is string => Boolean(id));
-
-  let customersById = new Map<string, unknown>();
-
-  if (customerIds.length > 0) {
-    const { data: customers, error: customersError } = await supabase
-      .from("customers")
-      .select("id, full_name, email, phone, source")
-      .eq("restaurant_id", restaurantId)
-      .in("id", customerIds);
-
-    if (customersError) {
-      return NextResponse.json({ error: customersError.message }, { status: 500 });
-    }
-
-    customersById = new Map((customers ?? []).map((customer) => [customer.id, customer]));
-  }
-
-  const recipients = (campaignCustomers ?? []).map((row) => ({
-    id: row.id,
-    customer_id: row.customer_id,
-    customer: customersById.get(row.customer_id) ?? null,
-  }));
 
   const { data: logs, error: logsError } = await supabase
     .from("message_logs")
@@ -115,5 +167,114 @@ export async function GET(
     campaign,
     recipients,
     logs: logs ?? [],
+  });
+}
+
+export async function POST(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const supabase = await createClient();
+  const { id: campaignId } = await params;
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  }
+
+  const restaurantId = await resolveRestaurantId(supabase, user.id);
+
+  if (!restaurantId) {
+    return NextResponse.json(
+      { error: "Restaurante não encontrado para o usuário." },
+      { status: 403 }
+    );
+  }
+
+  const { campaign, recipients, error } = await loadCampaignContext(supabase, campaignId, restaurantId);
+
+  if (error || !campaign) {
+    return NextResponse.json({ error: error ?? "Campanha não encontrada." }, { status: 404 });
+  }
+
+  if (campaign.channel !== "email") {
+    return NextResponse.json({ error: "Esta rota envia apenas campanhas de email." }, { status: 400 });
+  }
+
+  if (!campaign.subject?.trim()) {
+    return NextResponse.json({ error: "Campanha de email precisa de assunto." }, { status: 400 });
+  }
+
+  const validRecipients = recipients.filter((recipient) => recipient.customer?.email);
+
+  if (validRecipients.length === 0) {
+    return NextResponse.json({ error: "Nenhum destinatário com email válido." }, { status: 400 });
+  }
+
+  await supabase
+    .from("campaigns")
+    .update({ status: "scheduled", total_recipients: validRecipients.length })
+    .eq("id", campaignId)
+    .eq("restaurant_id", restaurantId);
+
+  let totalSent = 0;
+  let totalFailed = 0;
+
+  for (const recipient of validRecipients) {
+    const customer = recipient.customer;
+    const personalizedText = personalizeMessage(campaign.message, customer);
+    const result = await sendCampaignEmail({
+      to: customer!.email!,
+      subject: campaign.subject,
+      text: personalizedText,
+      html: textToHtml(personalizedText),
+      fromName: "Curry Pasta",
+    });
+
+    const status = result.success ? "sent" : "failed";
+    if (result.success) totalSent += 1;
+    else totalFailed += 1;
+
+    await supabase.from("message_logs").insert({
+      restaurant_id: restaurantId,
+      campaign_id: campaignId,
+      customer_id: customer?.id ?? null,
+      channel: "email",
+      status,
+      provider: result.provider,
+      external_id: result.externalId ?? null,
+      error_message: result.error ?? null,
+      sent_at: result.success ? new Date().toISOString() : null,
+    });
+  }
+
+  const finalStatus = totalFailed > 0 && totalSent === 0 ? "failed" : "sent";
+
+  const { data: updatedCampaign, error: updateError } = await supabase
+    .from("campaigns")
+    .update({
+      status: finalStatus,
+      total_recipients: validRecipients.length,
+      total_sent: totalSent,
+      total_failed: totalFailed,
+      sent_at: new Date().toISOString(),
+    })
+    .eq("id", campaignId)
+    .eq("restaurant_id", restaurantId)
+    .select("id, name, channel, status, subject, created_at, sent_at, total_recipients, total_sent, total_failed")
+    .limit(1);
+
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    campaign: updatedCampaign?.[0] ?? null,
+    total_sent: totalSent,
+    total_failed: totalFailed,
   });
 }
