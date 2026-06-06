@@ -35,8 +35,8 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Redireciona /login para /dashboard se já autenticado
-  if (pathname === "/login" && user) {
+  // Se já logado, redireciona /login e /register para /dashboard
+  if ((pathname === "/login" || pathname === "/register") && user) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
@@ -48,6 +48,7 @@ export const config = {
     "/dashboard/:path*",
     "/api/:path*",
     "/login",
+    "/register",
   ],
 };
 
