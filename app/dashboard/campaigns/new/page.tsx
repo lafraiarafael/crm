@@ -25,98 +25,92 @@ Faça seu pedido: https://currypasta.com.br/delivery
 
 Curry Pasta`;
 
-const DEFAULT_EMAIL_HTML = `<div style="font-family: Arial, Helvetica, sans-serif; background:#f6f2ec; padding:32px 16px;">
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function linkify(value: string) {
+  return escapeHtml(value).replace(
+    /(https?:\/\/[^\s<]+)/g,
+    '<a href="$1" style="color:#0b66d6;">$1</a>'
+  );
+}
+
+function renderMessageBlocks(message: string) {
+  const lines = message
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return `<p style="font-size:17px; line-height:1.6; color:#222; margin:0 0 22px 0;">Olá {nome},</p>`;
+  }
+
+  return lines
+    .map((line, index) => {
+      const fontSize = index === 1 ? "20px" : "17px";
+      const color = index === lines.length - 1 ? "#555" : "#222";
+      return `<p style="font-size:${fontSize}; line-height:1.65; color:${color}; margin:0 0 22px 0;">${linkify(line)}</p>`;
+    })
+    .join("\n");
+}
+
+function buildCurryPastaEmailHtml(message: string) {
+  return `<div style="font-family: Arial, Helvetica, sans-serif; background:#f6f2ec; padding:32px 16px;">
   <div style="max-width:640px; margin:0 auto; background:#ffffff; border-radius:18px; overflow:hidden;">
     <div style="padding:36px 34px 26px 34px; background:#15110d; display:flex; justify-content:space-between; align-items:center;">
       <div>
-        <p style="font-size:15px; color:#d8c7ad; margin:0 0 12px 0;">
-          Curry Pasta lança
-        </p>
-
-        <h1 style="font-size:30px; line-height:1.18; color:#ffffff; margin:0;">
-          Delivery Próprio 🍝
-        </h1>
+        <p style="font-size:15px; color:#d8c7ad; margin:0 0 12px 0;">Curry Pasta lança</p>
+        <h1 style="font-size:30px; line-height:1.18; color:#ffffff; margin:0;">Delivery Próprio 🍝</h1>
       </div>
-
       <img src="https://lh3.googleusercontent.com/d/13go2tWn8zWxkCRQFjUcLXsrYNMDkTgiA=w150" alt="Curry Pasta Logo" style="width:80px; height:80px; object-fit:contain; margin-left:20px; flex-shrink:0;" />
     </div>
 
     <div style="padding:34px;">
-      <p style="font-size:17px; line-height:1.6; color:#222; margin:0 0 22px 0;">
-        Olá {nome},
-      </p>
-
-      <p style="font-size:20px; line-height:1.65; color:#222; margin:0 0 26px 0;">
-        Temos o prazer de anunciar o <strong>lançamento do nosso Delivery Próprio</strong> com benefícios exclusivos para você!
-      </p>
+      ${renderMessageBlocks(message)}
 
       <div style="background:#faf6ef; border:1px solid #eadbc8; border-radius:14px; padding:24px; margin:0 0 30px 0;">
-        <p style="font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#8a5a2b; margin:0 0 8px 0;">
-          Benefícios Especiais
-        </p>
-
-        <p style="font-size:28px; line-height:1.2; font-weight:bold; color:#111; margin:0 0 22px 0;">
-          Aproveite os Descontos
-        </p>
+        <p style="font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#8a5a2b; margin:0 0 8px 0;">Benefícios Especiais</p>
+        <p style="font-size:28px; line-height:1.2; font-weight:bold; color:#111; margin:0 0 22px 0;">Aproveite os Descontos</p>
 
         <div style="background:#ffffff; border-left:4px solid #111; padding:16px; margin:0 0 16px 0;">
-          <p style="font-size:16px; line-height:1.7; color:#333; margin:0;">
-            ✅ <strong>Preços Reduzidos</strong><br />
-            Descontos especiais para pedidos via delivery próprio
-          </p>
+          <p style="font-size:16px; line-height:1.7; color:#333; margin:0;">✅ <strong>Preços Reduzidos</strong><br />Descontos especiais para pedidos via delivery próprio</p>
         </div>
 
         <div style="background:#ffffff; border-left:4px solid #111; padding:16px; margin:0 0 16px 0;">
-          <p style="font-size:16px; line-height:1.7; color:#333; margin:0;">
-            ✅ <strong>Frete Grátis</strong><br />
-            Entrega gratuita para todos os pedidos
-          </p>
+          <p style="font-size:16px; line-height:1.7; color:#333; margin:0;">✅ <strong>Frete Grátis</strong><br />Entrega gratuita para todos os pedidos</p>
         </div>
 
         <div style="background:#ffffff; border-left:4px solid #111; padding:16px; margin:0;">
-          <p style="font-size:16px; line-height:1.7; color:#333; margin:0;">
-            ✅ <strong>Sobremesa Cortesia</strong><br />
-            Ganhe uma sobremesa cortesia em todos os pedidos!
-          </p>
+          <p style="font-size:16px; line-height:1.7; color:#333; margin:0;">✅ <strong>Sobremesa Cortesia</strong><br />Ganhe uma sobremesa cortesia em todos os pedidos!</p>
         </div>
       </div>
 
-      <p style="font-size:17px; line-height:1.7; color:#333; margin:0 0 22px 0;">
-        <strong>Por tempo limitado apenas pelo nosso delivery próprio.</strong>
-      </p>
+      <p style="font-size:17px; line-height:1.7; color:#333; margin:0 0 22px 0;"><strong>Por tempo limitado apenas pelo nosso delivery próprio.</strong></p>
 
-      <a href="https://currypasta.com.br/delivery" style="display:inline-block; background:#111; color:#fff; text-decoration:none; padding:15px 26px; border-radius:9px; font-size:18px; font-weight:bold; margin:0 0 16px 0;">
-        FAZER PEDIDO AGORA
-      </a>
+      <a href="https://currypasta.com.br/delivery" style="display:inline-block; background:#111; color:#fff; text-decoration:none; padding:15px 26px; border-radius:9px; font-size:18px; font-weight:bold; margin:0 0 16px 0;">FAZER PEDIDO AGORA</a>
 
-      <p style="font-size:11px; line-height:1.5; color:#999; margin:0;">
-        ⏰ Ter-Qui: 11:30-15:00 | 18:00-22:00 | Sex: 11:30-15:00 | 18:00-23:00 | Sab: 12:00-15:00 | 18:00-23:00 | Dom: 12:00-15:00 | Seg: Fechado
-      </p>
+      <p style="font-size:11px; line-height:1.5; color:#999; margin:0;">⏰ Ter-Qui: 11:30-15:00 | 18:00-22:00 | Sex: 11:30-15:00 | 18:00-23:00 | Sab: 12:00-15:00 | 18:00-23:00 | Dom: 12:00-15:00 | Seg: Fechado</p>
 
-      <p style="font-size:14px; line-height:1.6; color:#666; margin:0 0 24px 0;">
-        Ou acesse:
-        <a href="https://currypasta.com.br/delivery" style="color:#0b66d6;">
-          https://currypasta.com.br/delivery
-        </a>
-      </p>
+      <p style="font-size:14px; line-height:1.6; color:#666; margin:0 0 24px 0;">Ou acesse: <a href="https://currypasta.com.br/delivery" style="color:#0b66d6;">https://currypasta.com.br/delivery</a></p>
 
-      <p style="font-size:15px; line-height:1.7; color:#555; margin:0 0 24px 0;">
-        Mais informações:<br />
-        <strong>(41) 99997-2053</strong>
-      </p>
+      <p style="font-size:15px; line-height:1.7; color:#555; margin:0 0 24px 0;">Mais informações:<br /><strong>(41) 99997-2053</strong></p>
 
       <hr style="border:none; border-top:1px solid #eee; margin:26px 0;" />
 
-      <p style="font-size:15px; line-height:1.6; color:#555; margin:0 0 6px 0;">
-        Av. Manoel Ribas, 750, Mercês, Curitiba/PR
-      </p>
-
-      <p style="font-size:16px; color:#111; margin:0;">
-        Curry Pasta 🍝
-      </p>
+      <p style="font-size:15px; line-height:1.6; color:#555; margin:0 0 6px 0;">Av. Manoel Ribas, 750, Mercês, Curitiba/PR</p>
+      <p style="font-size:16px; color:#111; margin:0;">Curry Pasta 🍝</p>
     </div>
   </div>
 </div>`;
+}
+
+const DEFAULT_EMAIL_HTML = buildCurryPastaEmailHtml(DEFAULT_EMAIL_MESSAGE);
 
 function previewHtml(html: string) {
   return html
@@ -133,6 +127,7 @@ export default function NewCampaignPage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showHtmlEditor, setShowHtmlEditor] = useState(false);
+  const [htmlManuallyEdited, setHtmlManuallyEdited] = useState(false);
 
   const [form, setForm] = useState({
     name: "",
@@ -173,7 +168,18 @@ export default function NewCampaignPage() {
   }
 
   function applyDefaultEmailTemplate() {
+    setHtmlManuallyEdited(false);
     setForm(f => ({ ...f, message: DEFAULT_EMAIL_MESSAGE, email_html: DEFAULT_EMAIL_HTML }));
+  }
+
+  function handleMessageChange(value: string) {
+    setForm(f => ({
+      ...f,
+      message: value,
+      email_html: f.channel === "email" && !htmlManuallyEdited
+        ? buildCurryPastaEmailHtml(value)
+        : f.email_html,
+    }));
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -277,13 +283,13 @@ export default function NewCampaignPage() {
               <label className="text-sm font-medium text-slate-700">Texto simples</label>
               <textarea
                 value={form.message}
-                onChange={e => setForm(f => ({...f, message: e.target.value}))}
+                onChange={e => handleMessageChange(e.target.value)}
                 required
                 rows={5}
                 placeholder={form.channel === "email" ? "Texto simples usado como fallback do email..." : `Escreva a mensagem do WhatsApp...\n\nUse {nome} para personalizar.`}
                 className="flex w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-200 resize-none"
               />
-              <p className="text-xs text-slate-500">Use {"{nome}"}, {"{nome_completo}"} ou {"${name}"} para personalizar.</p>
+              <p className="text-xs text-slate-500">Use {"{nome}"}, {"{nome_completo}"} ou {"${name}"} para personalizar. Enquanto o HTML não for editado manualmente, o preview acompanha este texto.</p>
             </div>
 
             {form.channel === "email" && (
@@ -293,7 +299,10 @@ export default function NewCampaignPage() {
                     <label className="text-sm font-medium text-slate-700">HTML do email</label>
                     <textarea
                       value={form.email_html}
-                      onChange={e => setForm(f => ({...f, email_html: e.target.value}))}
+                      onChange={e => {
+                        setHtmlManuallyEdited(true);
+                        setForm(f => ({...f, email_html: e.target.value}));
+                      }}
                       rows={18}
                       className="flex w-full rounded-2xl border border-slate-200 bg-slate-950 px-4 py-3 font-mono text-xs text-slate-50 placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-200 resize-y"
                     />
