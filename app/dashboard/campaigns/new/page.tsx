@@ -259,7 +259,7 @@ export default function NewCampaignPage() {
               <CardTitle className="text-base font-semibold text-slate-950">Mensagem</CardTitle>
               {form.channel === "email" && (
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" onClick={applyDefaultEmailTemplate} className="rounded-2xl">Usar padrão Curry Pasta</Button>
+                  <Button type="button" variant="outline" onClick={applyDefaultEmailTemplate} className="rounded-2xl">Usar padrão</Button>
                   <Button type="button" variant="outline" onClick={() => setShowHtmlEditor(v => !v)} className="rounded-2xl">
                     {showHtmlEditor ? <Eye className="mr-2 h-4 w-4" /> : <Code2 className="mr-2 h-4 w-4" />}
                     {showHtmlEditor ? "Ver preview" : "Editar HTML"}
