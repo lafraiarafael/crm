@@ -18,6 +18,7 @@ type Campaign = {
   status: "draft" | "scheduled" | "sent" | "failed" | "paused";
   subject: string | null;
   message: string;
+  email_html: string | null;
   created_at: string;
   sent_at: string | null;
   total_recipients: number;
@@ -64,11 +65,15 @@ async function resolveRestaurantId(
   return restaurantUser.restaurant_id as string;
 }
 
-function personalizeMessage(message: string, customer: Customer | null) {
-  const firstName = customer?.full_name?.trim().split(/\s+/)[0] ?? "";
-  return message
-    .replaceAll("{nome}", firstName || "cliente")
-    .replaceAll("{nome_completo}", customer?.full_name ?? "cliente");
+function personalizeContent(content: string, customer: Customer | null) {
+  const fullName = customer?.full_name ?? "cliente";
+  const firstName = customer?.full_name?.trim().split(/\s+/)[0] ?? "cliente";
+
+  return content
+    .replaceAll("${name}", firstName)
+    .replaceAll("{{name}}", firstName)
+    .replaceAll("{nome}", firstName)
+    .replaceAll("{nome_completo}", fullName);
 }
 
 function textToHtml(text: string) {
@@ -112,7 +117,7 @@ async function loadCampaignContext(
   const { data: campaigns, error: campaignError } = await supabase
     .from("campaigns")
     .select(
-      "id, restaurant_id, name, channel, status, subject, message, created_at, sent_at, total_recipients, total_sent, total_failed"
+      "id, restaurant_id, name, channel, status, subject, message, email_html, created_at, sent_at, total_recipients, total_sent, total_failed"
     )
     .eq("id", campaignId)
     .eq("restaurant_id", restaurantId)
@@ -286,12 +291,16 @@ export async function POST(
 
   for (const recipient of validRecipients) {
     const customer = recipient.customer;
-    const personalizedText = personalizeMessage(campaign.message, customer);
+    const personalizedText = personalizeContent(campaign.message, customer);
+    const personalizedHtml = campaign.email_html
+      ? personalizeContent(campaign.email_html, customer)
+      : textToHtml(personalizedText);
+
     const result = await sendCampaignEmail({
       to: customer!.email!,
       subject: campaign.subject,
       text: personalizedText,
-      html: textToHtml(personalizedText),
+      html: personalizedHtml,
       fromName: "Curry Pasta",
     });
 
