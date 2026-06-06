@@ -27,8 +27,9 @@ function getResendClient() {
 }
 
 function getFromAddress(fromName?: string) {
-  const configuredFrom = process.env.RESEND_FROM_EMAIL;
+  const configuredFrom = process.env.RESEND_FROM_EMAIL ?? process.env.RESEND_FROM_EMATL;
   if (configuredFrom) return configuredFrom;
+
   const safeName = fromName?.trim() || "Curry Pasta";
   return `${safeName} <no-reply@currypasta.com.br>`;
 }
