@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus, Mail, MessageCircle, Clock, CheckCircle2, XCircle, FileText, Inbox } from "lucide-react";
+import { Plus, Mail, MessageCircle, Clock, CheckCircle2, XCircle, FileText, Inbox, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -122,7 +122,11 @@ export default function CampaignsPage() {
                 const st = STATUS_CONFIG[campaign.status] ?? STATUS_CONFIG.draft;
                 const StatusIcon = st.icon;
                 return (
-                  <div key={campaign.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <Link
+                    key={campaign.id}
+                    href={`/dashboard/campaigns/${campaign.id}`}
+                    className="flex flex-col gap-3 py-4 transition hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between -mx-3 px-3 rounded-2xl"
+                  >
                     <div className="flex items-start gap-3">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50">
                         {campaign.channel === "email"
@@ -148,8 +152,9 @@ export default function CampaignsPage() {
                         <StatusIcon className="h-3 w-3" />
                         {st.label}
                       </Badge>
+                      <ChevronRight className="h-4 w-4 text-slate-400" />
                     </div>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
@@ -159,4 +164,3 @@ export default function CampaignsPage() {
     </div>
   );
 }
-
