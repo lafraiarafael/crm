@@ -16,12 +16,24 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const { data: customers } = await supabase
-    .from("customers")
-    .select("*")
-    .order("created_at", { ascending: false });
+  // Buscar restaurante e clientes em paralelo
+  const [{ data: restaurantUser }, { data: customers }] = await Promise.all([
+    supabase
+      .from("restaurant_users")
+      .select("restaurant_id, restaurants(id, name)")
+      .eq("user_id", user.id)
+      .limit(1)
+      .single(),
+    supabase
+      .from("customers")
+      .select("id, full_name, email, phone")
+      .order("created_at", { ascending: false })
+      .limit(5),
+  ]);
 
-  const totalCustomers = customers?.length || 0;
+  const restaurantName =
+    (restaurantUser?.restaurants as { name?: string } | null)?.name ?? "Meu Restaurante";
+  const totalCustomers = customers?.length ?? 0;
 
   return (
     <div className="space-y-6">
@@ -55,22 +67,22 @@ export default async function DashboardPage() {
 
         <DashboardStatCard
           title="WhatsApp"
-          value="Ativo"
-          description="módulo planejado"
+          value="Em breve"
+          description="configurar conexão"
           icon={<MessageCircle className="h-5 w-5 text-slate-500" />}
         />
 
         <DashboardStatCard
           title="Email"
-          value="Pronto"
-          description="módulo planejado"
+          value="Em breve"
+          description="configurar campanhas"
           icon={<Mail className="h-5 w-5 text-slate-500" />}
         />
 
         <DashboardStatCard
           title="Restaurante"
-          value="Curry Pasta"
-          description="conta piloto"
+          value={restaurantName}
+          description="sua conta"
           icon={<Store className="h-5 w-5 text-slate-500" />}
         />
       </section>
@@ -81,26 +93,37 @@ export default async function DashboardPage() {
             <CardTitle className="text-base font-semibold text-slate-950">Clientes recentes</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="divide-y divide-slate-200">
-              {customers?.map((customer) => (
-                <div
-                  key={customer.id}
-                  className="flex flex-col gap-4 border-b border-slate-200 py-4 last:border-b-0 md:flex-row md:items-center md:justify-between"
-                >
-                  <div>
-                    <p className="font-semibold text-slate-950">{customer.full_name}</p>
-                    <p className="mt-1 text-sm text-slate-500">{customer.email || "Sem email"}</p>
-                  </div>
+            {!customers || customers.length === 0 ? (
+              <p className="py-6 text-center text-sm text-slate-500">
+                Nenhum cliente cadastrado ainda. Acesse{" "}
+                <a href="/dashboard/customers" className="font-medium text-slate-950 underline-offset-4 hover:underline">
+                  Clientes
+                </a>{" "}
+                para começar.
+              </p>
+            ) : (
+              <div className="divide-y divide-slate-200">
+                {customers.map((customer) => (
+                  <div
+                    key={customer.id}
+                    className="flex flex-col gap-4 py-4 last:pb-0 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <p className="font-semibold text-slate-950">{customer.full_name}</p>
+                      <p className="mt-1 text-sm text-slate-500">{customer.email ?? "Sem email"}</p>
+                    </div>
 
-                  <Badge variant="secondary" className="w-fit rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">
-                    {customer.phone || "Sem telefone"}
-                  </Badge>
-                </div>
-              ))}
-            </div>
+                    <Badge variant="secondary" className="w-fit rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                      {customer.phone ?? "Sem telefone"}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </section>
     </div>
   );
 }
+
