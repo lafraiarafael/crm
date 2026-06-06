@@ -36,6 +36,7 @@ const campaignSchema = z.object({
   channel: z.enum(["email", "whatsapp"]),
   message: z.string().min(1, "Mensagem é obrigatória."),
   subject: z.string().optional().nullable(),
+  email_html: z.string().optional().nullable(),
   customer_ids: z.array(z.string().uuid()).min(1, "Selecione pelo menos 1 cliente."),
 });
 
@@ -51,9 +52,8 @@ export async function POST(request: Request) {
   const parsed = campaignSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dados inválidos." }, { status: 400 });
 
-  const { name, channel, message, subject, customer_ids } = parsed.data;
+  const { name, channel, message, subject, email_html, customer_ids } = parsed.data;
 
-  // Criar campanha
   const { data: campaign, error: campaignError } = await supabase
     .from("campaigns")
     .insert({
@@ -62,6 +62,7 @@ export async function POST(request: Request) {
       channel,
       message,
       subject: subject ?? null,
+      email_html: channel === "email" ? email_html ?? null : null,
       status: "draft",
       total_recipients: customer_ids.length,
     })
@@ -70,7 +71,6 @@ export async function POST(request: Request) {
 
   if (campaignError || !campaign) return NextResponse.json({ error: campaignError?.message ?? "Erro ao criar campanha." }, { status: 500 });
 
-  // Vincular clientes
   const links = customer_ids.map(cid => ({
     campaign_id: campaign.id,
     customer_id: cid,
@@ -85,4 +85,3 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ campaign }, { status: 201 });
 }
-
