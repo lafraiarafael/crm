@@ -11,7 +11,9 @@ import {
   FileText,
   Mail,
   MessageCircle,
+  MousePointerClick,
   Send,
+  TrendingUp,
   Users,
   XCircle,
 } from "lucide-react";
@@ -55,12 +57,48 @@ type MessageLog = {
   error_message: string | null;
   created_at: string;
   sent_at: string | null;
+  delivered_at: string | null;
+  opened_at: string | null;
+  clicked_at: string | null;
+  opened: boolean;
+  clicked: boolean;
+  clicked_url: string | null;
+  last_event_type: string | null;
+  last_event_at: string | null;
+};
+
+type EmailEvent = {
+  id: string;
+  message_log_id: string | null;
+  customer_id: string | null;
+  event_type: string;
+  event_status: string;
+  recipient_email: string | null;
+  clicked_url: string | null;
+  occurred_at: string;
+  created_at: string;
+};
+
+type Tracking = {
+  total: number;
+  sent: number;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  failed: number;
+  bounced: number;
+  complained: number;
+  delivery_rate: number;
+  open_rate: number;
+  click_rate: number;
 };
 
 type CampaignDetailResponse = {
   campaign: Campaign;
   recipients: Recipient[];
   logs: MessageLog[];
+  email_events: EmailEvent[];
+  tracking: Tracking;
 };
 
 const STATUS_CONFIG = {
@@ -77,6 +115,16 @@ const LOG_STATUS_CONFIG = {
   failed: { label: "Falhou", color: "bg-red-100 text-red-700", icon: XCircle },
 };
 
+const EVENT_LABELS: Record<string, string> = {
+  "email.sent": "Enviado",
+  "email.delivered": "Entregue",
+  "email.delivery_delayed": "Entrega atrasada",
+  "email.opened": "Aberto",
+  "email.clicked": "Clique",
+  "email.bounced": "Bounce",
+  "email.complained": "Reclamação",
+};
+
 function formatDate(value: string | null) {
   if (!value) return "—";
   return new Date(value).toLocaleString("pt-BR", {
@@ -86,6 +134,10 @@ function formatDate(value: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatPercent(value: number | undefined) {
+  return `${value ?? 0}%`;
 }
 
 export default function CampaignDetailPage() {
@@ -146,6 +198,8 @@ export default function CampaignDetailPage() {
   const campaign = data?.campaign ?? null;
   const recipients = data?.recipients ?? [];
   const logs = data?.logs ?? [];
+  const emailEvents = data?.email_events ?? [];
+  const tracking = data?.tracking ?? null;
   const status = campaign ? STATUS_CONFIG[campaign.status] ?? STATUS_CONFIG.draft : null;
   const StatusIcon = status?.icon ?? FileText;
   const canSendEmail = campaign?.channel === "email" && campaign.status !== "sent";
@@ -155,7 +209,16 @@ export default function CampaignDetailPage() {
         { label: "Destinatários", value: campaign.total_recipients ?? recipients.length, icon: Users },
         { label: "Enviadas", value: campaign.total_sent ?? 0, icon: CheckCircle2 },
         { label: "Falhas", value: campaign.total_failed ?? 0, icon: XCircle },
-        { label: "Logs", value: logs.length, icon: FileText },
+        { label: "Eventos", value: emailEvents.length, icon: FileText },
+      ]
+    : [];
+
+  const trackingCards = tracking
+    ? [
+        { label: "Entregues", value: tracking.delivered, sub: `${formatPercent(tracking.delivery_rate)} de entrega`, icon: CheckCircle2 },
+        { label: "Abertos", value: tracking.opened, sub: `${formatPercent(tracking.open_rate)} de abertura`, icon: TrendingUp },
+        { label: "Cliques", value: tracking.clicked, sub: `${formatPercent(tracking.click_rate)} de clique`, icon: MousePointerClick },
+        { label: "Bounces", value: tracking.bounced + tracking.complained, sub: `${tracking.bounced} bounce / ${tracking.complained} reclamação`, icon: XCircle },
       ]
     : [];
 
@@ -215,6 +278,24 @@ export default function CampaignDetailPage() {
               );
             })}
           </section>
+
+          {campaign.channel === "email" && (
+            <section className="grid gap-4 sm:grid-cols-4">
+              {trackingCards.map((stat) => {
+                const Icon = stat.icon;
+                return (
+                  <div key={stat.label} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/50">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs uppercase tracking-[0.12em] text-slate-500">{stat.label}</p>
+                      <Icon className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <p className="mt-2 text-3xl font-semibold text-slate-950">{stat.value}</p>
+                    <p className="mt-1 text-xs text-slate-500">{stat.sub}</p>
+                  </div>
+                );
+              })}
+            </section>
+          )}
 
           <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
             <Card className="bg-white border border-slate-200 shadow-sm shadow-slate-200/50">
@@ -290,6 +371,34 @@ export default function CampaignDetailPage() {
 
           <Card className="bg-white border border-slate-200 shadow-sm shadow-slate-200/50">
             <CardHeader>
+              <CardTitle className="text-base font-semibold text-slate-950">Eventos de email</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {emailEvents.length === 0 ? (
+                <div className="py-10 text-center text-sm text-slate-500">
+                  Nenhum evento recebido ainda. Depois do webhook da Resend, aberturas e cliques aparecerão aqui.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {emailEvents.map((event) => (
+                    <div key={event.id} className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-slate-950">{EVENT_LABELS[event.event_type] ?? event.event_type}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{event.recipient_email ?? "—"} · {formatDate(event.occurred_at)}</p>
+                        {event.clicked_url && <p className="mt-1 break-all text-xs text-slate-500">{event.clicked_url}</p>}
+                      </div>
+                      <Badge className="inline-flex w-fit items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                        {event.event_status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white border border-slate-200 shadow-sm shadow-slate-200/50">
+            <CardHeader>
               <CardTitle className="text-base font-semibold text-slate-950">Logs de envio</CardTitle>
             </CardHeader>
             <CardContent>
@@ -307,7 +416,13 @@ export default function CampaignDetailPage() {
                       <div key={log.id} className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-sm font-medium text-slate-950">{log.provider ?? log.channel}</p>
-                          <p className="mt-0.5 text-xs text-slate-500">{formatDate(log.created_at)}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            Enviado: {formatDate(log.sent_at)} · Entregue: {formatDate(log.delivered_at)}
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            Aberto: {formatDate(log.opened_at)} · Clique: {formatDate(log.clicked_at)}
+                          </p>
+                          {log.clicked_url && <p className="mt-1 break-all text-xs text-slate-500">{log.clicked_url}</p>}
                           {log.error_message && <p className="mt-1 text-xs text-red-600">{log.error_message}</p>}
                         </div>
                         <Badge className={`inline-flex w-fit items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${logStatus.color}`}>
