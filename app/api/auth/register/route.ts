@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 const registerSchema = z.object({
@@ -25,15 +24,15 @@ export async function POST(request: Request) {
     const parsed = registerSchema.safeParse(body);
 
     if (!parsed.success) {
+      const firstError = parsed.error.issues[0];
       return NextResponse.json(
-        { error: parsed.error.errors[0]?.message ?? "Dados inválidos." },
+        { error: firstError?.message ?? "Dados inválidos." },
         { status: 400 }
       );
     }
 
     const { email, password, restaurantName } = parsed.data;
 
-    // Admin client para criar usuário sem auto-login
     const adminClient = createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -58,7 +57,7 @@ export async function POST(request: Request) {
 
     const userId = authData.user.id;
 
-    // 2. Gerar slug único para o restaurante
+    // 2. Gerar slug único
     const baseSlug = generateSlug(restaurantName);
     const uniqueSlug = `${baseSlug}-${userId.slice(0, 8)}`;
 
@@ -70,7 +69,6 @@ export async function POST(request: Request) {
       .single();
 
     if (restaurantError || !restaurant) {
-      // Rollback: deletar usuário criado
       await adminClient.auth.admin.deleteUser(userId);
       return NextResponse.json(
         { error: "Erro ao criar restaurante." },
@@ -78,7 +76,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4. Vincular usuário como owner do restaurante
+    // 4. Vincular usuário como owner
     const { error: linkError } = await adminClient
       .from("restaurant_users")
       .insert({
@@ -88,7 +86,6 @@ export async function POST(request: Request) {
       });
 
     if (linkError) {
-      // Rollback: deletar restaurante e usuário
       await adminClient.from("restaurants").delete().eq("id", restaurant.id);
       await adminClient.auth.admin.deleteUser(userId);
       return NextResponse.json(
