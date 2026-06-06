@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -46,17 +47,72 @@ function isAllowedEvent(type: string | undefined) {
   return type in EVENT_TO_STATUS;
 }
 
-export async function POST(request: Request) {
-  const configuredSecret = process.env.RESEND_WEBHOOK_TOKEN;
+function getSvixSignatures(signatureHeader: string) {
+  return signatureHeader
+    .split(" ")
+    .flatMap((part) => part.split(","))
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      if (part.startsWith("v1,")) return part.slice(3);
+      if (part.startsWith("v1=")) return part.slice(3);
+      return part;
+    });
+}
 
-  if (configuredSecret) {
-    const incomingSecret = request.headers.get("x-webhook-token");
-    if (incomingSecret !== configuredSecret) {
+function verifyResendSignature(request: Request, rawBody: string) {
+  const secret = process.env.RESEND_WEBHOOK_SECRET;
+  if (!secret) return true;
+
+  const svixId = request.headers.get("svix-id");
+  const svixTimestamp = request.headers.get("svix-timestamp");
+  const svixSignature = request.headers.get("svix-signature");
+
+  if (!svixId || !svixTimestamp || !svixSignature) return false;
+
+  const timestamp = Number(svixTimestamp);
+  if (!Number.isFinite(timestamp)) return false;
+
+  const now = Math.floor(Date.now() / 1000);
+  const fiveMinutes = 60 * 5;
+  if (Math.abs(now - timestamp) > fiveMinutes) return false;
+
+  const secretWithoutPrefix = secret.startsWith("whsec_") ? secret.slice(6) : secret;
+  const key = Buffer.from(secretWithoutPrefix, "base64");
+  const signedContent = `${svixId}.${svixTimestamp}.${rawBody}`;
+  const expectedSignature = createHmac("sha256", key).update(signedContent).digest("base64");
+  const expected = Buffer.from(expectedSignature);
+
+  return getSvixSignatures(svixSignature).some((signature) => {
+    const actual = Buffer.from(signature);
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  });
+}
+
+export async function POST(request: Request) {
+  const configuredToken = process.env.RESEND_WEBHOOK_TOKEN;
+
+  if (configuredToken) {
+    const incomingToken = request.headers.get("x-webhook-token");
+    if (incomingToken !== configuredToken) {
       return NextResponse.json({ error: "Unauthorized webhook." }, { status: 401 });
     }
   }
 
-  const payload = (await request.json()) as ResendWebhookPayload;
+  const rawBody = await request.text();
+  const signatureOk = verifyResendSignature(request, rawBody);
+
+  if (!signatureOk) {
+    return NextResponse.json({ error: "Invalid webhook signature." }, { status: 401 });
+  }
+
+  let payload: ResendWebhookPayload;
+
+  try {
+    payload = JSON.parse(rawBody) as ResendWebhookPayload;
+  } catch {
+    return NextResponse.json({ error: "Invalid webhook payload." }, { status: 400 });
+  }
 
   if (!isAllowedEvent(payload.type)) {
     return NextResponse.json({ received: true, ignored: true });
