@@ -2,14 +2,15 @@ import { Sparkle, Circle } from "lucide-react";
 
 interface TopbarProps {
   userEmail: string;
+  restaurantName: string;
 }
 
-export function Topbar({ userEmail }: TopbarProps) {
+export function Topbar({ userEmail, restaurantName }: TopbarProps) {
   return (
     <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur-xl px-4 py-4 shadow-sm shadow-slate-200/50 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Visão geral</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-slate-500">{restaurantName}</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
             Painel principal
           </h2>
@@ -29,3 +30,4 @@ export function Topbar({ userEmail }: TopbarProps) {
     </header>
   );
 }
+
