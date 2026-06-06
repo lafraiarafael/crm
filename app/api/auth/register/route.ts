@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 const registerSchema = z.object({
@@ -33,43 +34,52 @@ export async function POST(request: Request) {
 
     const { email, password, restaurantName } = parsed.data;
 
-    const adminClient = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    // 1. Criar usuário no Supabase Auth
-    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+    // 1. Criar usuário via signUp normal (compatível com novas chaves Supabase)
+    const supabase = await createServerClient();
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
-      email_confirm: true,
     });
 
-    if (authError) {
-      if (authError.message.toLowerCase().includes("already registered")) {
+    if (signUpError) {
+      if (signUpError.message.toLowerCase().includes("already registered")) {
         return NextResponse.json(
           { error: "Este email já está cadastrado." },
           { status: 409 }
         );
       }
-      return NextResponse.json({ error: authError.message }, { status: 400 });
+      return NextResponse.json({ error: signUpError.message }, { status: 400 });
     }
 
-    const userId = authData.user.id;
+    const userId = signUpData.user?.id;
+    if (!userId) {
+      return NextResponse.json(
+        { error: "Erro ao criar usuário." },
+        { status: 500 }
+      );
+    }
 
-    // 2. Gerar slug único
+    // 2. Usar service client apenas para operações de DB (sem auth admin)
+    //    Bypassa RLS para inserir restaurante e vínculo
+    const serviceClient = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+
     const baseSlug = generateSlug(restaurantName);
     const uniqueSlug = `${baseSlug}-${userId.slice(0, 8)}`;
 
     // 3. Criar restaurante
-    const { data: restaurant, error: restaurantError } = await adminClient
+    const { data: restaurant, error: restaurantError } = await serviceClient
       .from("restaurants")
       .insert({ name: restaurantName, slug: uniqueSlug })
       .select()
       .single();
 
     if (restaurantError || !restaurant) {
-      await adminClient.auth.admin.deleteUser(userId);
+      // Tentar limpar usuário criado
+      await serviceClient.auth.admin.deleteUser(userId).catch(() => null);
       return NextResponse.json(
         { error: "Erro ao criar restaurante." },
         { status: 500 }
@@ -77,7 +87,7 @@ export async function POST(request: Request) {
     }
 
     // 4. Vincular usuário como owner
-    const { error: linkError } = await adminClient
+    const { error: linkError } = await serviceClient
       .from("restaurant_users")
       .insert({
         restaurant_id: restaurant.id,
@@ -86,8 +96,8 @@ export async function POST(request: Request) {
       });
 
     if (linkError) {
-      await adminClient.from("restaurants").delete().eq("id", restaurant.id);
-      await adminClient.auth.admin.deleteUser(userId);
+      await serviceClient.from("restaurants").delete().eq("id", restaurant.id);
+      await serviceClient.auth.admin.deleteUser(userId).catch(() => null);
       return NextResponse.json(
         { error: "Erro ao vincular usuário ao restaurante." },
         { status: 500 }
