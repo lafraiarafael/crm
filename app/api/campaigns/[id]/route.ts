@@ -25,6 +25,26 @@ type Campaign = {
   total_failed: number;
 };
 
+type MessageLog = {
+  id: string;
+  customer_id: string | null;
+  channel: "email" | "whatsapp";
+  status: string;
+  provider: string | null;
+  external_id: string | null;
+  error_message: string | null;
+  created_at: string;
+  sent_at: string | null;
+  delivered_at: string | null;
+  opened_at: string | null;
+  clicked_at: string | null;
+  opened: boolean;
+  clicked: boolean;
+  clicked_url: string | null;
+  last_event_type: string | null;
+  last_event_at: string | null;
+};
+
 async function resolveRestaurantId(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string
@@ -57,6 +77,31 @@ function textToHtml(text: string) {
     .map((line) => line.trim())
     .map((line) => (line ? `<p>${line}</p>` : "<br />"))
     .join("\n");
+}
+
+function buildTrackingMetrics(logs: MessageLog[]) {
+  const total = logs.length;
+  const sent = logs.filter((log) => log.status === "sent" || Boolean(log.sent_at)).length;
+  const delivered = logs.filter((log) => Boolean(log.delivered_at)).length;
+  const opened = logs.filter((log) => log.opened || Boolean(log.opened_at)).length;
+  const clicked = logs.filter((log) => log.clicked || Boolean(log.clicked_at)).length;
+  const failed = logs.filter((log) => log.status === "failed").length;
+  const bounced = logs.filter((log) => log.last_event_type === "email.bounced").length;
+  const complained = logs.filter((log) => log.last_event_type === "email.complained").length;
+
+  return {
+    total,
+    sent,
+    delivered,
+    opened,
+    clicked,
+    failed,
+    bounced,
+    complained,
+    delivery_rate: sent > 0 ? Math.round((delivered / sent) * 100) : 0,
+    open_rate: delivered > 0 ? Math.round((opened / delivered) * 100) : 0,
+    click_rate: delivered > 0 ? Math.round((clicked / delivered) * 100) : 0,
+  };
 }
 
 async function loadCampaignContext(
@@ -154,7 +199,7 @@ export async function GET(
 
   const { data: logs, error: logsError } = await supabase
     .from("message_logs")
-    .select("id, customer_id, channel, status, provider, external_id, error_message, created_at, sent_at")
+    .select("id, customer_id, channel, status, provider, external_id, error_message, created_at, sent_at, delivered_at, opened_at, clicked_at, opened, clicked, clicked_url, last_event_type, last_event_at")
     .eq("campaign_id", campaignId)
     .eq("restaurant_id", restaurantId)
     .order("created_at", { ascending: false });
@@ -163,10 +208,25 @@ export async function GET(
     return NextResponse.json({ error: logsError.message }, { status: 500 });
   }
 
+  const messageLogs = (logs ?? []) as MessageLog[];
+
+  const { data: events, error: eventsError } = await supabase
+    .from("email_events")
+    .select("id, message_log_id, customer_id, event_type, event_status, recipient_email, clicked_url, occurred_at, created_at")
+    .eq("campaign_id", campaignId)
+    .eq("restaurant_id", restaurantId)
+    .order("occurred_at", { ascending: false });
+
+  if (eventsError) {
+    return NextResponse.json({ error: eventsError.message }, { status: 500 });
+  }
+
   return NextResponse.json({
     campaign,
     recipients,
-    logs: logs ?? [],
+    logs: messageLogs,
+    email_events: events ?? [],
+    tracking: buildTrackingMetrics(messageLogs),
   });
 }
 
