@@ -1,0 +1,27 @@
+{
+  "name": "crm-whatsapp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "latest",
+    "cors": "latest",
+    "dotenv": "latest",
+    "express": "latest",
+    "pino": "latest",
+    "qrcode": "latest"
+  },
+  "devDependencies": {
+    "@types/cors": "latest",
+    "@types/express": "latest",
+    "@types/node": "latest",
+    "@types/qrcode": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}
