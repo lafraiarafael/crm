@@ -260,13 +260,9 @@ export default function CustomersPage() {
   };
 
   const handleCreateCampaign = () => {
-    if (selectedCustomerIds.length === 0) {
-      return;
-    }
-
-    setCampaignMessage(
-      `Placeholder: criar campanha para ${selectedCustomerIds.length} cliente(s) selecionado(s).`
-    );
+    if (selectedCustomerIds.length === 0) return;
+    const ids = selectedCustomerIds.join(",");
+    window.location.href = `/dashboard/campaigns/new?customers=${encodeURIComponent(ids)}`;
   };
 
   return (
