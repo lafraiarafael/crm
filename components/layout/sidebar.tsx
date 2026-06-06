@@ -13,19 +13,33 @@ const navItems = [
   { href: "/dashboard/settings", label: "Configurações", icon: Settings2 },
 ];
 
-export function Sidebar() {
+function getInitials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+interface SidebarProps {
+  restaurantName: string;
+}
+
+export function Sidebar({ restaurantName }: SidebarProps) {
   const pathname = usePathname();
+  const initials = getInitials(restaurantName);
 
   return (
     <aside className="flex h-full flex-col justify-between overflow-hidden bg-white">
       <div className="space-y-10">
         <div>
           <div className="mb-10 flex items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm shadow-slate-200/50">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm shadow-slate-900/20">
-              <span className="text-lg font-semibold">CP</span>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm shadow-slate-900/20">
+              <span className="text-sm font-semibold">{initials}</span>
             </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-950">Curry Pasta CRM</p>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-950">{restaurantName}</p>
               <p className="text-xs text-slate-500">Hub de controle empresarial</p>
             </div>
           </div>
@@ -46,8 +60,7 @@ export function Sidebar() {
                       : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
                   )}
                 >
-                  <Icon className={cn("h-5 w-5", active ? "text-slate-900" : "text-slate-400")}
-                  />
+                  <Icon className={cn("h-5 w-5", active ? "text-slate-900" : "text-slate-400")} />
                   <span>{item.label}</span>
                 </Link>
               );
@@ -63,3 +76,4 @@ export function Sidebar() {
     </aside>
   );
 }
+
