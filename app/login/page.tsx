@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -102,6 +103,16 @@ export default function LoginPage() {
             >
               {loading ? "Entrando..." : "Entrar"}
             </Button>
+
+            <p className="text-center text-sm text-slate-600">
+              Ainda não tem conta?{" "}
+              <Link
+                href="/register"
+                className="font-medium text-slate-950 underline-offset-4 hover:underline"
+              >
+                Criar conta grátis
+              </Link>
+            </p>
           </form>
         </CardContent>
       </Card>
@@ -113,3 +124,4 @@ export default function LoginPage() {
     </main>
   );
 }
+
