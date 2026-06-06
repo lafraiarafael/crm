@@ -149,9 +149,9 @@ export default function NewCampaignPage() {
                 onChange={e => setForm(f => ({...f, message: e.target.value}))}
                 required
                 rows={5}
-                placeholder={form.channel === "email" ? "Escreva o conteúdo do email..." : "Escreva a mensagem do WhatsApp...
+                placeholder={form.channel === "email" ? "Escreva o conteúdo do email..." : `Escreva a mensagem do WhatsApp...
 
-Use {nome} para personalizar."}
+Use {nome} para personalizar.`}
                 className="flex w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-200 resize-none"
               />
               <p className="text-xs text-slate-500">Use {"{nome}"} para inserir o nome do cliente automaticamente.</p>
@@ -228,4 +228,3 @@ Use {nome} para personalizar."}
     </div>
   );
 }
-
