@@ -94,7 +94,10 @@ export default function CampaignDetailPage() {
 
   const [data, setData] = useState<CampaignDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sendSuccess, setSendSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (!campaignId) return;
@@ -118,16 +121,41 @@ export default function CampaignDetailPage() {
     }
   }
 
+  async function handleSendEmail() {
+    if (!campaignId || sending) return;
+
+    setSending(true);
+    setSendError(null);
+    setSendSuccess(null);
+
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}`, { method: "POST" });
+      const json = await res.json();
+
+      if (!res.ok) throw new Error(json.error);
+
+      setSendSuccess(`Envio concluído: ${json.total_sent ?? 0} enviados, ${json.total_failed ?? 0} falhas.`);
+      await loadCampaign();
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Erro ao enviar campanha.");
+    } finally {
+      setSending(false);
+    }
+  }
+
   const campaign = data?.campaign ?? null;
+  const recipients = data?.recipients ?? [];
+  const logs = data?.logs ?? [];
   const status = campaign ? STATUS_CONFIG[campaign.status] ?? STATUS_CONFIG.draft : null;
   const StatusIcon = status?.icon ?? FileText;
+  const canSendEmail = campaign?.channel === "email" && campaign.status !== "sent";
 
   const stats = campaign
     ? [
-        { label: "Destinatários", value: campaign.total_recipients ?? data?.recipients.length ?? 0, icon: Users },
+        { label: "Destinatários", value: campaign.total_recipients ?? recipients.length, icon: Users },
         { label: "Enviadas", value: campaign.total_sent ?? 0, icon: CheckCircle2 },
         { label: "Falhas", value: campaign.total_failed ?? 0, icon: XCircle },
-        { label: "Logs", value: data?.logs.length ?? 0, icon: FileText },
+        { label: "Logs", value: logs.length, icon: FileText },
       ]
     : [];
 
@@ -204,9 +232,36 @@ export default function CampaignDetailPage() {
                   <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Conteúdo</p>
                   <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{campaign.message}</p>
                 </div>
-                <Button disabled className="rounded-2xl bg-slate-950 text-white opacity-60">
-                  <Send className="mr-2 h-4 w-4" /> Envio será conectado no próximo bloco
-                </Button>
+
+                {sendError && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>{sendError}</span>
+                  </div>
+                )}
+
+                {sendSuccess && (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    <span>{sendSuccess}</span>
+                  </div>
+                )}
+
+                {campaign.channel === "email" ? (
+                  <Button
+                    type="button"
+                    disabled={!canSendEmail || sending}
+                    onClick={handleSendEmail}
+                    className="rounded-2xl bg-slate-950 text-white hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    <Send className="mr-2 h-4 w-4" />
+                    {sending ? "Enviando..." : campaign.status === "sent" ? "Campanha já enviada" : "Enviar campanha por email"}
+                  </Button>
+                ) : (
+                  <Button disabled className="rounded-2xl bg-slate-950 text-white opacity-60">
+                    <Send className="mr-2 h-4 w-4" /> Envio por WhatsApp será conectado no próximo bloco
+                  </Button>
+                )}
               </CardContent>
             </Card>
 
@@ -215,11 +270,11 @@ export default function CampaignDetailPage() {
                 <CardTitle className="text-base font-semibold text-slate-950">Destinatários</CardTitle>
               </CardHeader>
               <CardContent>
-                {data.recipients.length === 0 ? (
+                {recipients.length === 0 ? (
                   <p className="py-6 text-center text-sm text-slate-500">Nenhum destinatário vinculado.</p>
                 ) : (
                   <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-100 rounded-2xl border border-slate-200">
-                    {data.recipients.map((recipient) => (
+                    {recipients.map((recipient) => (
                       <div key={recipient.id} className="px-4 py-3">
                         <p className="text-sm font-medium text-slate-950">{recipient.customer?.full_name ?? "Cliente removido"}</p>
                         <p className="mt-0.5 truncate text-xs text-slate-500">
@@ -238,13 +293,13 @@ export default function CampaignDetailPage() {
               <CardTitle className="text-base font-semibold text-slate-950">Logs de envio</CardTitle>
             </CardHeader>
             <CardContent>
-              {data.logs.length === 0 ? (
+              {logs.length === 0 ? (
                 <div className="py-10 text-center text-sm text-slate-500">
                   Nenhum envio registrado ainda. Os logs aparecerão aqui depois da integração com Resend ou WhatsApp.
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {data.logs.map((log) => {
+                  {logs.map((log) => {
                     const logStatus = LOG_STATUS_CONFIG[log.status] ?? LOG_STATUS_CONFIG.pending;
                     const LogStatusIcon = logStatus.icon;
 
