@@ -20,6 +20,8 @@ function renderMessage(template: string, name: string): string {
     .replace(/\{\{name\}\}/g, name);
 }
 
+type CustomerRow = { id: string; full_name: string; phone: string };
+
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -44,7 +46,6 @@ export async function POST(
   if (campaign.channel !== "whatsapp") return NextResponse.json({ error: "Esta campanha não é de WhatsApp." }, { status: 400 });
   if (campaign.status === "sent") return NextResponse.json({ error: "Campanha já foi enviada." }, { status: 400 });
 
-  // Verificar sessão WhatsApp conectada
   const { data: waSession } = await supabase
     .from("whatsapp_sessions")
     .select("status")
@@ -53,18 +54,19 @@ export async function POST(
     .single();
 
   if (!waSession || waSession.status !== "connected") {
-    return NextResponse.json({ error: "WhatsApp não está conectado. Acesse /dashboard/whatsapp para conectar." }, { status: 400 });
+    return NextResponse.json(
+      { error: "WhatsApp não está conectado. Acesse /dashboard/whatsapp para conectar." },
+      { status: 400 }
+    );
   }
 
-  // Buscar clientes com telefone
   const { data: links } = await supabase
     .from("campaign_customers")
     .select("customer_id, customers(id, full_name, phone)")
     .eq("campaign_id", campaignId);
 
-  type CustomerRow = { id: string; full_name: string; phone: string };
   const customers = (links ?? [])
-    .map(l => l.customers as CustomerRow | null)
+    .map(l => l.customers as unknown as CustomerRow | null)
     .filter((c): c is CustomerRow => !!c?.phone);
 
   if (customers.length === 0) {
@@ -86,19 +88,13 @@ export async function POST(
   for (const customer of customers) {
     const body = renderMessage(campaign.message as string, customer.full_name);
     try {
-      const result = await sendWhatsAppMessage({
-        restaurantId,
-        phone: customer.phone,
-        message: body,
-      });
+      await sendWhatsAppMessage({ restaurantId, phone: customer.phone, message: body });
       sent++;
       logs.push({
         campaign_id: campaignId, customer_id: customer.id, restaurant_id: restaurantId,
         channel: "whatsapp", status: "sent", error_message: null,
         sent_at: new Date().toISOString(), message_text: body,
       });
-      // externalId disponível em result.externalId para logs futuros
-      void result;
     } catch (err) {
       failed++;
       logs.push({
