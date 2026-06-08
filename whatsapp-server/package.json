@@ -23,5 +23,6 @@
     "@types/qrcode": "latest",
     "tsx": "latest",
     "typescript": "latest"
-  }
+  },
+  "description": "CRM WhatsApp server \u2014 Baileys + Express"
 }
