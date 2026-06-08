@@ -66,7 +66,22 @@ export async function connectSession(restaurantId: string): Promise<WhatsAppSess
       version,
       auth: state,
       printQRInTerminal: true,
-      logger: { level: "warn" } as never,
+      logger: {
+        level: "warn",
+        trace: () => {},
+        debug: () => {},
+        info: () => {},
+        warn: (msg: unknown) => console.warn("[baileys]", msg),
+        error: (msg: unknown) => console.error("[baileys]", msg),
+        fatal: (msg: unknown) => console.error("[baileys] fatal", msg),
+        child: () => ({
+          trace: () => {}, debug: () => {}, info: () => {},
+          warn: (m: unknown) => console.warn("[baileys]", m),
+          error: (m: unknown) => console.error("[baileys]", m),
+          fatal: (m: unknown) => console.error("[baileys]", m),
+          child: () => ({} as never),
+        }),
+      } as never,
       browser: ["CRM", "Chrome", "1.0.0"],
     });
 
