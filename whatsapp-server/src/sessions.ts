@@ -7,7 +7,7 @@ import { Boom } from "@hapi/boom";
 import QRCode from "qrcode";
 import path from "path";
 import fs from "fs";
-import type { WhatsAppSession, SessionStatus } from "./types.js";
+import type { WhatsAppSession } from "./types.js";
 
 const SESSION_DIR = process.env.SESSION_DIR ?? path.join(process.cwd(), "sessions");
 const sessions = new Map<string, WhatsAppSession>();
@@ -47,64 +47,85 @@ export async function connectSession(restaurantId: string): Promise<WhatsAppSess
 
   setStatus(restaurantId, { status: "connecting", qrCode: null, lastError: null });
 
-  const authDir = sessionPath(restaurantId);
-  fs.mkdirSync(authDir, { recursive: true });
+  try {
+    const authDir = sessionPath(restaurantId);
+    fs.mkdirSync(authDir, { recursive: true });
 
-  const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const { version } = await fetchLatestBaileysVersion();
+    const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    printQRInTerminal: false,
-    logger: { level: "silent" } as never,
-  });
+    // Buscar versão com fallback — evita falha de rede no Railway
+    let version: [number, number, number] = [2, 3000, 1015901307];
+    try {
+      const result = await fetchLatestBaileysVersion();
+      version = result.version;
+    } catch {
+      console.warn("[baileys] fetchLatestBaileysVersion falhou — usando versão padrão");
+    }
 
-  setStatus(restaurantId, { socket: sock });
+    const sock = makeWASocket({
+      version,
+      auth: state,
+      printQRInTerminal: true,
+      logger: { level: "warn" } as never,
+      browser: ["CRM", "Chrome", "1.0.0"],
+    });
 
-  sock.ev.on("creds.update", saveCreds);
+    setStatus(restaurantId, { socket: sock });
 
-  sock.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect, qr } = update;
+    sock.ev.on("creds.update", saveCreds);
 
-    if (qr) {
-      try {
-        const qrDataUrl = await QRCode.toDataURL(qr);
-        setStatus(restaurantId, { qrCode: qrDataUrl, status: "connecting" });
-      } catch {
-        setStatus(restaurantId, { qrCode: null });
+    sock.ev.on("connection.update", async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr) {
+        console.log(`[baileys] QR gerado para ${restaurantId}`);
+        try {
+          const qrDataUrl = await QRCode.toDataURL(qr);
+          setStatus(restaurantId, { qrCode: qrDataUrl, status: "connecting" });
+        } catch (err) {
+          console.error("[baileys] Erro ao gerar QR Data URL:", err);
+          setStatus(restaurantId, { qrCode: null });
+        }
       }
-    }
 
-    if (connection === "open") {
-      const info = sock.user;
-      setStatus(restaurantId, {
-        status: "connected",
-        qrCode: null,
-        phoneNumber: info?.id?.split(":")[0] ?? null,
-        displayName: info?.name ?? null,
-        lastConnectedAt: new Date(),
-        lastError: null,
-      });
-    }
-
-    if (connection === "close") {
-      const reason = (lastDisconnect?.error as Boom)?.output?.statusCode;
-      const shouldReconnect = reason !== DisconnectReason.loggedOut;
-
-      if (shouldReconnect) {
-        setTimeout(() => connectSession(restaurantId), 3000);
-      } else {
+      if (connection === "open") {
+        const info = sock.user;
+        console.log(`[baileys] Conectado: ${restaurantId} — ${info?.id}`);
         setStatus(restaurantId, {
-          status: "disconnected",
-          socket: null,
+          status: "connected",
           qrCode: null,
-          phoneNumber: null,
-          displayName: null,
+          phoneNumber: info?.id?.split(":")[0] ?? null,
+          displayName: info?.name ?? null,
+          lastConnectedAt: new Date(),
+          lastError: null,
         });
       }
-    }
-  });
+
+      if (connection === "close") {
+        const reason = (lastDisconnect?.error as Boom)?.output?.statusCode;
+        const shouldReconnect = reason !== DisconnectReason.loggedOut;
+        console.log(`[baileys] Conexão fechada: ${restaurantId} — reason: ${reason} — reconectar: ${shouldReconnect}`);
+
+        if (shouldReconnect) {
+          setStatus(restaurantId, { status: "connecting", socket: null });
+          setTimeout(() => connectSession(restaurantId), 3000);
+        } else {
+          setStatus(restaurantId, {
+            status: "disconnected",
+            socket: null,
+            qrCode: null,
+            phoneNumber: null,
+            displayName: null,
+          });
+        }
+      }
+    });
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[baileys] Erro ao conectar ${restaurantId}:`, msg);
+    setStatus(restaurantId, { status: "error", lastError: msg, socket: null });
+  }
 
   return sessions.get(restaurantId)!;
 }
@@ -120,7 +141,6 @@ export async function sendMessage(
   }
 
   const sock = session.socket as ReturnType<typeof makeWASocket>;
-
   const normalized = phone.replace(/\D/g, "");
   const jid = normalized.includes("@") ? normalized : `${normalized}@s.whatsapp.net`;
 
