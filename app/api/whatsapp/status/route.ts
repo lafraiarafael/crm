@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getWhatsAppStatus } from "@/lib/whatsapp";
 
 async function getRestaurantId(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   const { data, error } = await supabase
@@ -21,61 +20,76 @@ export async function GET() {
   const restaurantId = await getRestaurantId(supabase, user.id);
   if (!restaurantId) return NextResponse.json({ error: "Restaurante não encontrado." }, { status: 403 });
 
-  try {
-    // Chamar servidor Baileys real (se WHATSAPP_SERVER_URL estiver configurada)
-    const serverStatus = await getWhatsAppStatus(restaurantId);
+  const serverUrl = process.env.WHATSAPP_SERVER_URL;
+  const serverSecret = process.env.WHATSAPP_SERVER_SECRET;
 
-    // Sincronizar estado no Supabase para persistência
-    await supabase
+  // Buscar sessão salva no Supabase
+  let { data: session } = await supabase
+    .from("whatsapp_sessions")
+    .select("id, restaurant_id, provider, status, phone_number, display_name, qr_code, last_error, last_connected_at, updated_at")
+    .eq("restaurant_id", restaurantId)
+    .eq("provider", "baileys")
+    .maybeSingle();
+
+  // Criar sessão se não existir
+  if (!session) {
+    const { data: newSession } = await supabase
       .from("whatsapp_sessions")
-      .upsert(
+      .insert({ restaurant_id: restaurantId, provider: "baileys", status: "disconnected" })
+      .select("id, restaurant_id, provider, status, phone_number, display_name, qr_code, last_error, last_connected_at, updated_at")
+      .single();
+    session = newSession;
+  }
+
+  // Se não há servidor configurado, retornar apenas dados do Supabase
+  if (!serverUrl || !serverSecret) {
+    return NextResponse.json({ session, warning: "Servidor WhatsApp não configurado." });
+  }
+
+  // Se está connecting ou connected, buscar status atualizado do Railway
+  if (session?.status === "connecting" || session?.status === "connected") {
+    try {
+      const res = await fetch(
+        `${serverUrl}/sessions/${encodeURIComponent(restaurantId)}/status`,
         {
-          restaurant_id: restaurantId,
-          provider: "baileys",
-          status: serverStatus.status,
-          phone_number: serverStatus.phoneNumber,
-          display_name: serverStatus.displayName,
-          qr_code: serverStatus.qrCode,
-          last_error: serverStatus.lastError ?? null,
-          last_connected_at: serverStatus.lastConnectedAt,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "restaurant_id,provider" }
+          headers: { Authorization: `Bearer ${serverSecret}` },
+          signal: AbortSignal.timeout(6000),
+        }
       );
 
-    // Buscar sessão salva para retornar formato consistente
-    const { data: session } = await supabase
-      .from("whatsapp_sessions")
-      .select("id, restaurant_id, provider, status, phone_number, display_name, qr_code, last_error, last_connected_at, updated_at")
-      .eq("restaurant_id", restaurantId)
-      .eq("provider", "baileys")
-      .single();
+      if (res.ok) {
+        const serverStatus = await res.json() as {
+          status: string;
+          qrCode: string | null;
+          phoneNumber: string | null;
+          displayName: string | null;
+          lastConnectedAt: string | null;
+          lastError?: string | null;
+        };
 
-    return NextResponse.json({ session, serverStatus });
-  } catch (err) {
-    // Servidor não disponível — retornar dados do Supabase como fallback
-    const { data: session } = await supabase
-      .from("whatsapp_sessions")
-      .select("id, restaurant_id, provider, status, phone_number, display_name, qr_code, last_error, last_connected_at, updated_at")
-      .eq("restaurant_id", restaurantId)
-      .eq("provider", "baileys")
-      .maybeSingle();
+        // Sincronizar no Supabase
+        const { data: updated } = await supabase
+          .from("whatsapp_sessions")
+          .update({
+            status: serverStatus.status,
+            qr_code: serverStatus.qrCode,
+            phone_number: serverStatus.phoneNumber,
+            display_name: serverStatus.displayName,
+            last_error: serverStatus.lastError ?? null,
+            last_connected_at: serverStatus.lastConnectedAt ?? session?.last_connected_at,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("restaurant_id", restaurantId)
+          .eq("provider", "baileys")
+          .select("id, restaurant_id, provider, status, phone_number, display_name, qr_code, last_error, last_connected_at, updated_at")
+          .single();
 
-    if (!session) {
-      const { data: newSession } = await supabase
-        .from("whatsapp_sessions")
-        .insert({ restaurant_id: restaurantId, provider: "baileys", status: "disconnected" })
-        .select("id, restaurant_id, provider, status, phone_number, display_name, qr_code, last_error, last_connected_at, updated_at")
-        .single();
-      return NextResponse.json({
-        session: newSession,
-        warning: err instanceof Error ? err.message : "Servidor WhatsApp não disponível.",
-      });
+        return NextResponse.json({ session: updated ?? session });
+      }
+    } catch {
+      // Railway não respondeu — retornar dados do Supabase como fallback
     }
-
-    return NextResponse.json({
-      session,
-      warning: err instanceof Error ? err.message : "Servidor WhatsApp não disponível.",
-    });
   }
+
+  return NextResponse.json({ session });
 }
