@@ -1,5 +1,5 @@
 import "dotenv/config";
-import express from "express";
+import express, { type Request, type Response } from "express";
 import cors from "cors";
 import { requireAuth } from "./auth.js";
 import {
@@ -17,13 +17,13 @@ app.use(express.json());
 const PORT = Number(process.env.PORT ?? 3001);
 
 // ── GET /health ───────────────────────────────────────────────────────────────
-app.get("/health", (_req, res) => {
+app.get("/health", (_req: Request, res: Response) => {
   res.json({ ok: true, uptime: process.uptime() });
 });
 
 // ── GET /sessions/:restaurantId/status ────────────────────────────────────────
-app.get("/sessions/:restaurantId/status", requireAuth, (req, res) => {
-  const { restaurantId } = req.params;
+app.get("/sessions/:restaurantId/status", requireAuth, (req: Request, res: Response) => {
+  const restaurantId = String(req.params.restaurantId);
   const session = getOrCreateSession(restaurantId);
 
   const body: StatusResponse = {
@@ -41,8 +41,8 @@ app.get("/sessions/:restaurantId/status", requireAuth, (req, res) => {
 });
 
 // ── POST /sessions/:restaurantId/connect ──────────────────────────────────────
-app.post("/sessions/:restaurantId/connect", requireAuth, async (req, res) => {
-  const { restaurantId } = req.params;
+app.post("/sessions/:restaurantId/connect", requireAuth, async (req: Request, res: Response) => {
+  const restaurantId = String(req.params.restaurantId);
 
   try {
     const session = await connectSession(restaurantId);
@@ -67,8 +67,8 @@ app.post("/sessions/:restaurantId/connect", requireAuth, async (req, res) => {
 });
 
 // ── POST /sessions/:restaurantId/send ─────────────────────────────────────────
-app.post("/sessions/:restaurantId/send", requireAuth, async (req, res) => {
-  const { restaurantId } = req.params;
+app.post("/sessions/:restaurantId/send", requireAuth, async (req: Request, res: Response) => {
+  const restaurantId = String(req.params.restaurantId);
   const { phone, message } = req.body as SendMessagePayload;
 
   if (!phone || !message) {
@@ -94,8 +94,8 @@ app.post("/sessions/:restaurantId/send", requireAuth, async (req, res) => {
 });
 
 // ── POST /sessions/:restaurantId/logout ───────────────────────────────────────
-app.post("/sessions/:restaurantId/logout", requireAuth, async (req, res) => {
-  const { restaurantId } = req.params;
+app.post("/sessions/:restaurantId/logout", requireAuth, async (req: Request, res: Response) => {
+  const restaurantId = String(req.params.restaurantId);
 
   try {
     await logoutSession(restaurantId);
