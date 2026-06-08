@@ -69,7 +69,7 @@ export default function WhatsAppPage() {
   // Polling automático quando status é "connecting" (aguardando QR / conexão)
   useEffect(() => {
     if (session?.status !== "connecting") return;
-    const interval = setInterval(loadStatus, 4000);
+    const interval = setInterval(loadStatus, 15000);
     return () => clearInterval(interval);
   }, [session?.status, loadStatus]);
 
