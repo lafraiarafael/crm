@@ -195,6 +195,28 @@ export default function CampaignDetailPage() {
     }
   }
 
+  async function handleSendWhatsApp() {
+    if (!campaignId || sending) return;
+
+    setSending(true);
+    setSendError(null);
+    setSendSuccess(null);
+
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/send-whatsapp`, { method: "POST" });
+      const json = await res.json();
+
+      if (!res.ok) throw new Error(json.error);
+
+      setSendSuccess(`Envio concluído: ${json.sent ?? 0} enviados, ${json.failed ?? 0} falhas.`);
+      await loadCampaign();
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Erro ao enviar campanha via WhatsApp.");
+    } finally {
+      setSending(false);
+    }
+  }
+
   const campaign = data?.campaign ?? null;
   const recipients = data?.recipients ?? [];
   const logs = data?.logs ?? [];
@@ -339,8 +361,13 @@ export default function CampaignDetailPage() {
                     {sending ? "Enviando..." : campaign.status === "sent" ? "Campanha já enviada" : "Enviar campanha por email"}
                   </Button>
                 ) : (
-                  <Button disabled className="rounded-2xl bg-slate-950 text-white opacity-60">
-                    <Send className="mr-2 h-4 w-4" /> Envio por WhatsApp será conectado no próximo bloco
+                  <Button
+                    onClick={handleSendWhatsApp}
+                    disabled={sending || campaign?.status === "sent"}
+                    className="rounded-2xl bg-slate-950 text-white hover:bg-slate-800"
+                  >
+                    <Send className="mr-2 h-4 w-4" />
+                    {sending ? "Enviando..." : "Enviar via WhatsApp"}
                   </Button>
                 )}
               </CardContent>
