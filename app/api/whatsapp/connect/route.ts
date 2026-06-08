@@ -12,6 +12,9 @@ async function getRestaurantId(supabase: Awaited<ReturnType<typeof createClient>
   return data.restaurant_id as string;
 }
 
+// Configura max duration para 25s (Vercel permite até 30s no plano free)
+export const maxDuration = 25;
+
 export async function POST() {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -27,21 +30,24 @@ export async function POST() {
     return NextResponse.json({ error: "Servidor WhatsApp não configurado." }, { status: 503 });
   }
 
-  // Disparar conexão no Railway sem aguardar resposta completa (fire-and-forget)
-  // O Railway vai processar em background e o /status vai buscar o QR via polling
-  void fetch(
-    `${serverUrl}/sessions/${encodeURIComponent(restaurantId)}/connect`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${serverSecret}`,
-      },
-    }
-  ).catch(() => null); // ignorar erros — o status vai checar
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${serverSecret}`,
+  };
 
-  // Marcar como "connecting" no Supabase imediatamente
-  const { data: session } = await supabase
+  // Disparar /connect no Railway
+  try {
+    await fetch(`${serverUrl}/sessions/${encodeURIComponent(restaurantId)}/connect`, {
+      method: "POST",
+      headers,
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    // Se falhou ao chamar connect, tentar mesmo assim buscar status
+  }
+
+  // Marcar como connecting no Supabase imediatamente
+  await supabase
     .from("whatsapp_sessions")
     .upsert(
       {
@@ -55,40 +61,38 @@ export async function POST() {
         updated_at: new Date().toISOString(),
       },
       { onConflict: "restaurant_id,provider" }
-    )
-    .select("id, restaurant_id, provider, status, phone_number, display_name, qr_code, last_error, last_connected_at, updated_at")
-    .single();
-
-  // Aguardar 3 segundos para o Baileys ter tempo de gerar o primeiro QR
-  await new Promise((r) => setTimeout(r, 3000));
-
-  // Tentar buscar o QR do Railway
-  try {
-    const res = await fetch(
-      `${serverUrl}/sessions/${encodeURIComponent(restaurantId)}/status`,
-      {
-        headers: { Authorization: `Bearer ${serverSecret}` },
-        signal: AbortSignal.timeout(5000),
-      }
     );
 
-    if (res.ok) {
+  // Polling com até 20s para o QR aparecer (Railway leva 5-15s na primeira vez)
+  for (let attempt = 0; attempt < 8; attempt++) {
+    await new Promise((r) => setTimeout(r, attempt === 0 ? 3000 : 2500));
+
+    try {
+      const res = await fetch(
+        `${serverUrl}/sessions/${encodeURIComponent(restaurantId)}/status`,
+        { headers: { Authorization: `Bearer ${serverSecret}` }, signal: AbortSignal.timeout(5000) }
+      );
+
+      if (!res.ok) continue;
+
       const serverStatus = await res.json() as {
         status: string;
         qrCode: string | null;
         phoneNumber: string | null;
         displayName: string | null;
         lastConnectedAt: string | null;
+        lastError?: string | null;
       };
 
-      // Atualizar com QR se já disponível
-      const { data: updated } = await supabase
+      // Atualizar Supabase com o estado atual
+      const { data: session } = await supabase
         .from("whatsapp_sessions")
         .update({
           status: serverStatus.status,
           qr_code: serverStatus.qrCode,
           phone_number: serverStatus.phoneNumber,
           display_name: serverStatus.displayName,
+          last_error: serverStatus.lastError ?? null,
           updated_at: new Date().toISOString(),
         })
         .eq("restaurant_id", restaurantId)
@@ -96,11 +100,22 @@ export async function POST() {
         .select("id, restaurant_id, provider, status, phone_number, display_name, qr_code, last_error, last_connected_at, updated_at")
         .single();
 
-      return NextResponse.json({ session: updated ?? session });
+      // Retornar assim que tiver QR ou estiver connected
+      if (serverStatus.qrCode || serverStatus.status === "connected") {
+        return NextResponse.json({ session });
+      }
+    } catch {
+      // Tentar novamente
     }
-  } catch {
-    // QR ainda não disponível — o polling vai buscar
   }
+
+  // Retornar o que temos após timeout
+  const { data: session } = await supabase
+    .from("whatsapp_sessions")
+    .select("id, restaurant_id, provider, status, phone_number, display_name, qr_code, last_error, last_connected_at, updated_at")
+    .eq("restaurant_id", restaurantId)
+    .eq("provider", "baileys")
+    .single();
 
   return NextResponse.json({ session });
 }
