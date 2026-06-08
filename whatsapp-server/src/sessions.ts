@@ -156,8 +156,14 @@ export async function sendMessage(
   }
 
   const sock = session.socket as ReturnType<typeof makeWASocket>;
-  const normalized = phone.replace(/\D/g, "");
+  // Normalizar número para formato WhatsApp brasileiro
+  let normalized = phone.replace(/\D/g, "");
+  // Se não começa com DDI, assumir Brasil (55)
+  if (!normalized.startsWith("55") && normalized.length <= 11) {
+    normalized = "55" + normalized;
+  }
   const jid = normalized.includes("@") ? normalized : `${normalized}@s.whatsapp.net`;
+  console.log(`[baileys] Enviando para JID: ${jid}`);
 
   const delay = 2000 + Math.random() * 3000;
   await new Promise((r) => setTimeout(r, delay));
