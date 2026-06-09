@@ -334,39 +334,6 @@ export default function CampaignDetailPage() {
           )}
 
           <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-            {data?.link_clicks && data.link_clicks.total_clicks > 0 && (
-              <Card className="bg-white border border-slate-200 shadow-sm shadow-slate-200/50">
-                <CardHeader>
-                  <CardTitle className="text-base font-semibold text-slate-950 flex items-center gap-2">
-                    <MousePointerClick className="h-4 w-4" /> Cliques em links rastreados
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex gap-6 mb-4">
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-slate-950">{data.link_clicks.total_clicks}</p>
-                      <p className="text-xs text-slate-500">Total de cliques</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-slate-950">{data.link_clicks.unique_customers}</p>
-                      <p className="text-xs text-slate-500">Clientes únicos</p>
-                    </div>
-                  </div>
-                  <div className="divide-y divide-slate-100">
-                    {data.link_clicks.clicks.map((click, i) => (
-                      <div key={i} className="py-3 flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-slate-950">{click.customer_name}</p>
-                          <p className="text-xs text-slate-500 break-all">↗ {click.destination_url}</p>
-                        </div>
-                        <p className="text-xs text-slate-400 shrink-0 ml-4">{formatDate(click.clicked_at)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
             <Card className="bg-white border border-slate-200 shadow-sm shadow-slate-200/50">
               <CardHeader>
                 <CardTitle className="text-base font-semibold text-slate-950">Mensagem</CardTitle>
