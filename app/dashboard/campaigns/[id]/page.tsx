@@ -95,12 +95,24 @@ type Tracking = {
   click_rate: number;
 };
 
+type LinkClick = {
+  customer_name: string;
+  customer_id: string;
+  clicked_at: string;
+  destination_url: string;
+};
+
 type CampaignDetailResponse = {
   campaign: Campaign;
   recipients: Recipient[];
   logs: MessageLog[];
   email_events: EmailEvent[];
   tracking: Tracking;
+  link_clicks: {
+    total_clicks: number;
+    unique_customers: number;
+    clicks: LinkClick[];
+  } | null;
 };
 
 const STATUS_CONFIG = {
