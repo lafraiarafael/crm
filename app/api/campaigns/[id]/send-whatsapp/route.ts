@@ -20,6 +20,67 @@ function renderMessage(template: string, name: string): string {
     .replace(/\{\{name\}\}/g, name);
 }
 
+// Criar link rastreado no Worker do Cloudflare
+async function createTrackedLink(params: {
+  campaignId: string;
+  customerId: string;
+  customerName: string;
+  destinationUrl: string;
+}): Promise<string | null> {
+  const trackerUrl = process.env.LINK_TRACKER_URL;
+  const trackerSecret = process.env.LINK_TRACKER_SECRET;
+  if (!trackerUrl || !trackerSecret) return null;
+
+  try {
+    const res = await fetch(`${trackerUrl}/api/links`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Worker-Secret": trackerSecret,
+      },
+      body: JSON.stringify({
+        campaign_id: params.campaignId,
+        customer_id: params.customerId,
+        customer_name: params.customerName,
+        destination_url: params.destinationUrl,
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json() as { short_url: string };
+    return data.short_url ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Substituir URLs na mensagem por links rastreados
+async function replaceUrlsWithTracked(
+  message: string,
+  campaignId: string,
+  customerId: string,
+  customerName: string
+): Promise<string> {
+  const urlRegex = /https?:\/\/[^\s]+/g;
+  const urls = message.match(urlRegex);
+  if (!urls) return message;
+
+  let result = message;
+  for (const url of urls) {
+    const tracked = await createTrackedLink({
+      campaignId,
+      customerId,
+      customerName,
+      destinationUrl: url,
+    });
+    if (tracked) {
+      result = result.replace(url, tracked);
+    }
+  }
+  return result;
+}
+
 type CustomerRow = { id: string; full_name: string; phone: string };
 
 export async function POST(
@@ -86,7 +147,12 @@ export async function POST(
   const logs: LogRow[] = [];
 
   for (const customer of customers) {
-    const body = renderMessage(campaign.message as string, customer.full_name);
+    // Renderizar mensagem com nome do cliente
+    const rendered = renderMessage(campaign.message as string, customer.full_name);
+
+    // Substituir URLs por links rastreados únicos por cliente
+    const body = await replaceUrlsWithTracked(rendered, campaignId, customer.id, customer.full_name);
+
     try {
       await sendWhatsAppMessage({ restaurantId, phone: customer.phone, message: body });
       sent++;
