@@ -226,12 +226,50 @@ export async function GET(
     return NextResponse.json({ error: eventsError.message }, { status: 500 });
   }
 
+  // Enriquecer logs com nome e telefone do cliente
+  const customersMap = new Map<string, { full_name: string; phone: string | null }>();
+  const customerIdsInLogs = [...new Set(messageLogs.map(l => l.customer_id).filter(Boolean))] as string[];
+  if (customerIdsInLogs.length > 0) {
+    const { data: logCustomers } = await supabase
+      .from("customers")
+      .select("id, full_name, phone")
+      .in("id", customerIdsInLogs);
+    for (const c of logCustomers ?? []) {
+      customersMap.set(c.id, { full_name: c.full_name, phone: c.phone });
+    }
+  }
+
+  const enrichedLogs = messageLogs.map(log => ({
+    ...log,
+    customer_name: log.customer_id ? (customersMap.get(log.customer_id)?.full_name ?? null) : null,
+    customer_phone: log.customer_id ? (customersMap.get(log.customer_id)?.phone ?? null) : null,
+  }));
+
+  // Buscar cliques do Cloudflare D1 via Worker
+  let linkClicks: { total_clicks: number; unique_customers: number; clicks: unknown[] } = {
+    total_clicks: 0, unique_customers: 0, clicks: []
+  };
+  const trackerUrl = process.env.LINK_TRACKER_URL;
+  const trackerSecret = process.env.LINK_TRACKER_SECRET;
+  if (trackerUrl && trackerSecret) {
+    try {
+      const clicksRes = await fetch(`${trackerUrl}/api/clicks/${campaignId}`, {
+        headers: { "X-Worker-Secret": trackerSecret },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (clicksRes.ok) {
+        linkClicks = await clicksRes.json() as typeof linkClicks;
+      }
+    } catch { /* ignorar */ }
+  }
+
   return NextResponse.json({
     campaign,
     recipients,
-    logs: messageLogs,
+    logs: enrichedLogs,
     email_events: events ?? [],
     tracking: buildTrackingMetrics(messageLogs),
+    link_clicks: linkClicks,
   });
 }
 
