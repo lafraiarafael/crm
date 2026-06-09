@@ -50,6 +50,8 @@ type Recipient = {
 type MessageLog = {
   id: string;
   customer_id: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
   channel: "email" | "whatsapp";
   status: "pending" | "sent" | "failed";
   provider: string | null;
@@ -320,6 +322,39 @@ export default function CampaignDetailPage() {
           )}
 
           <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+            {data?.link_clicks && data.link_clicks.total_clicks > 0 && (
+              <Card className="bg-white border border-slate-200 shadow-sm shadow-slate-200/50">
+                <CardHeader>
+                  <CardTitle className="text-base font-semibold text-slate-950 flex items-center gap-2">
+                    <MousePointerClick className="h-4 w-4" /> Cliques em links rastreados
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex gap-6 mb-4">
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-slate-950">{data.link_clicks.total_clicks}</p>
+                      <p className="text-xs text-slate-500">Total de cliques</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-slate-950">{data.link_clicks.unique_customers}</p>
+                      <p className="text-xs text-slate-500">Clientes únicos</p>
+                    </div>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {data.link_clicks.clicks.map((click, i) => (
+                      <div key={i} className="py-3 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-slate-950">{click.customer_name}</p>
+                          <p className="text-xs text-slate-500 break-all">↗ {click.destination_url}</p>
+                        </div>
+                        <p className="text-xs text-slate-400 shrink-0 ml-4">{formatDate(click.clicked_at)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card className="bg-white border border-slate-200 shadow-sm shadow-slate-200/50">
               <CardHeader>
                 <CardTitle className="text-base font-semibold text-slate-950">Mensagem</CardTitle>
@@ -372,6 +407,39 @@ export default function CampaignDetailPage() {
                 )}
               </CardContent>
             </Card>
+
+            {data?.link_clicks && data.link_clicks.total_clicks > 0 && (
+              <Card className="bg-white border border-slate-200 shadow-sm shadow-slate-200/50">
+                <CardHeader>
+                  <CardTitle className="text-base font-semibold text-slate-950 flex items-center gap-2">
+                    <MousePointerClick className="h-4 w-4" /> Cliques em links rastreados
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex gap-6 mb-4">
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-slate-950">{data.link_clicks.total_clicks}</p>
+                      <p className="text-xs text-slate-500">Total de cliques</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-slate-950">{data.link_clicks.unique_customers}</p>
+                      <p className="text-xs text-slate-500">Clientes únicos</p>
+                    </div>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {data.link_clicks.clicks.map((click, i) => (
+                      <div key={i} className="py-3 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-slate-950">{click.customer_name}</p>
+                          <p className="text-xs text-slate-500 break-all">↗ {click.destination_url}</p>
+                        </div>
+                        <p className="text-xs text-slate-400 shrink-0 ml-4">{formatDate(click.clicked_at)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <Card className="bg-white border border-slate-200 shadow-sm shadow-slate-200/50">
               <CardHeader>
@@ -442,14 +510,21 @@ export default function CampaignDetailPage() {
                     return (
                       <div key={log.id} className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <p className="text-sm font-medium text-slate-950">{log.provider ?? log.channel}</p>
-                          <p className="mt-0.5 text-xs text-slate-500">
-                            Enviado: {formatDate(log.sent_at)} · Entregue: {formatDate(log.delivered_at)}
+                          <p className="text-sm font-medium text-slate-950">
+                            {log.customer_name ?? "Cliente"}
+                            {log.customer_phone && <span className="ml-2 text-xs font-normal text-slate-400">{log.customer_phone}</span>}
                           </p>
                           <p className="mt-0.5 text-xs text-slate-500">
-                            Aberto: {formatDate(log.opened_at)} · Clique: {formatDate(log.clicked_at)}
+                            Canal: {log.channel} · Enviado: {formatDate(log.sent_at)}
+                            {log.delivered_at && ` · Entregue: ${formatDate(log.delivered_at)}`}
                           </p>
-                          {log.clicked_url && <p className="mt-1 break-all text-xs text-slate-500">{log.clicked_url}</p>}
+                          {log.channel === "email" && (
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {log.opened_at ? `Aberto: ${formatDate(log.opened_at)}` : "Não aberto"}
+                              {log.clicked_at ? ` · Clicou: ${formatDate(log.clicked_at)}` : " · Sem clique"}
+                            </p>
+                          )}
+                          {log.clicked_url && <p className="mt-1 break-all text-xs text-slate-400">↗ {log.clicked_url}</p>}
                           {log.error_message && <p className="mt-1 text-xs text-red-600">{log.error_message}</p>}
                         </div>
                         <Badge className={`inline-flex w-fit items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${logStatus.color}`}>
